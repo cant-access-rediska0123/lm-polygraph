@@ -22,6 +22,7 @@ class Claim:
     sentence: str
     # Indices in the original generation of the tokens, which are related to the current claim
     aligned_token_ids: List[int]
+    implicit_true: bool | None = None  # None if unknown
 
 
 class ClaimsExtractor(StatCalculator):
@@ -30,14 +31,14 @@ class ClaimsExtractor(StatCalculator):
     """
 
     def __init__(
-        self,
-        openai_chat: OpenAIChat,
-        sent_separators: str = ".?!。？！\n",
-        language: str = "en",
-        progress_bar: bool = False,
-        extraction_prompts: Dict[str, str] = CLAIM_EXTRACTION_PROMPTS,
-        matching_prompts: Dict[str, str] = MATCHING_PROMPTS,
-        n_threads: int = 1,
+            self,
+            openai_chat: OpenAIChat,
+            sent_separators: str = ".?!。？！\n",
+            language: str = "en",
+            progress_bar: bool = False,
+            extraction_prompts: Dict[str, str] = CLAIM_EXTRACTION_PROMPTS,
+            matching_prompts: Dict[str, str] = MATCHING_PROMPTS,
+            n_threads: int = 1,
     ):
         super().__init__()
         log.info(f"Initializing ClaimsExtractor with language={language}")
@@ -63,13 +64,60 @@ class ClaimsExtractor(StatCalculator):
             ],
         )
 
+    def _openai_extraction(
+            self,
+            greedy_texts: List[str],
+            greedy_tokens: List[List[int]],
+            model: WhiteboxModel,
+    ) -> List[List[Claim]]:
+        raise Exception('Should only use metadata for claims extraction in this fork')
+        with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
+            claims = list(
+                tqdm(
+                    executor.map(
+                        self.claims_from_text,
+                        greedy_texts,
+                        greedy_tokens,
+                        [model.tokenizer] * len(greedy_texts),
+                    ),
+                    total=len(greedy_texts),
+                    desc="Extracting claims",
+                    disable=not self.progress_bar,
+                )
+            )
+        return claims
+
+    def _claims_from_metainfo(
+            self,
+            greedy_texts: List[str],
+            greedy_tokens: List[List[int]],
+            metainfos: List[List[Dict]],
+            model: WhiteboxModel,
+    ) -> List[List[Claim]]:
+        claims = []
+        for greedy_text, greedy_token, metainfo in zip(greedy_texts, greedy_tokens, metainfos):
+            claims.append([])
+            for span in metainfo:
+                begin, end, text = span['begin'], span['end'], span['text']
+                assert greedy_text[begin:end] == text
+                match_str = ' ' * begin + '^' * (end - begin) + ' ' * (len(greedy_text) - end)
+                aligned_token_ids = self._align(greedy_text, match_str, greedy_tokens, model.tokenizer)
+                claim = Claim(
+                    claim_text=span['text'],
+                    sentence=None,
+                    aligned_token_ids=aligned_token_ids,
+                    implicit_true=span['implicit_true'],
+                )
+                claims[-1].append(claim)
+        return claims
+
     def __call__(
-        self,
-        dependencies: Dict[str, object],
-        texts: List[str],
-        model: WhiteboxModel,
-        *args,
-        **kwargs,
+            self,
+            dependencies: Dict[str, object],
+            texts: List[str],
+            model: WhiteboxModel,
+            *args,
+            **kwargs,
     ) -> Dict[str, List]:
         """
         Extracts the claims out of each generation text.
@@ -88,24 +136,12 @@ class ClaimsExtractor(StatCalculator):
         """
         greedy_texts = dependencies["greedy_texts"]
         greedy_tokens = dependencies["greedy_tokens"]
-        claims: List[List[Claim]] = []
-        claim_texts_concatenated: List[str] = []
-        claim_input_texts_concatenated: List[str] = []
 
-        with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
-            claims = list(
-                tqdm(
-                    executor.map(
-                        self.claims_from_text,
-                        greedy_texts,
-                        greedy_tokens,
-                        [model.tokenizer] * len(greedy_texts),
-                    ),
-                    total=len(greedy_texts),
-                    desc="Extracting claims",
-                    disable=not self.progress_bar,
-                )
-            )
+        metainfo = dependencies["metainfo"]
+        if metainfo is None:
+            claims = self._openai_extraction(greedy_texts, greedy_tokens, model)
+        else:
+            claims = self._claims_from_metainfo(greedy_texts, greedy_tokens, metainfo, model)
 
         for c in claims:
             for claim in c:
@@ -148,7 +184,7 @@ class ClaimsExtractor(StatCalculator):
 
             # Extract claims from current sentence
             for c in self._claims_from_sentence(
-                s, tokens[sent_start_token_idx:sent_end_token_idx], tokenizer
+                    s, tokens[sent_start_token_idx:sent_end_token_idx], tokenizer
             ):
                 # Correct aligned tokens positions from sentence-level to generation-level
                 for i in range(len(c.aligned_token_ids)):
@@ -157,10 +193,10 @@ class ClaimsExtractor(StatCalculator):
         return claims
 
     def _claims_from_sentence(
-        self,
-        sent: str,
-        sent_tokens: List[int],
-        tokenizer,
+            self,
+            sent: str,
+            sent_tokens: List[int],
+            tokenizer,
     ) -> List[Claim]:
         # Extract claims with specific prompt
         extracted_claims = self.openai_chat.ask(
@@ -300,11 +336,11 @@ class ClaimsExtractor(StatCalculator):
         return match_str
 
     def _align(
-        self,
-        sent: str,
-        match_str: str,
-        sent_tokens: List[int],
-        tokenizer,
+            self,
+            sent: str,
+            match_str: str,
+            sent_tokens: List[int],
+            tokenizer,
     ) -> List[int]:
         """
         Identifies token indices in `sent_tokens` that align with matching characters (marked by '^')
@@ -335,8 +371,8 @@ class ClaimsExtractor(StatCalculator):
             if sent[sent_pos:].startswith(cur_token_text):
                 # If the match string corresponding to the token contains matches, add to answer
                 if any(
-                    t == "^"
-                    for t in match_str[sent_pos : sent_pos + len(cur_token_text)]
+                        t == "^"
+                        for t in match_str[sent_pos: sent_pos + len(cur_token_text)]
                 ):
                     aligned_token_ids.append(cur_token_i)
                 cur_token_i += 1

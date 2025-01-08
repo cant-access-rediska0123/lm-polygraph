@@ -307,12 +307,13 @@ class UEManager:
 
     def _process(self, iterable_data, batch_callback):
         iterable_data = tqdm(self.data) if self.verbose else self.data
-        for batch_i, (inp_texts, hyp_texts, target_texts) in enumerate(iterable_data):
+        for batch_i, (inp_texts, hyp_texts, target_texts, metainfo) in enumerate(iterable_data):
             batch_stats: Dict[str, np.ndarray] = {}
             for key, val in [
                 ("input_texts", inp_texts),
                 ("hyp_texts", hyp_texts),
                 ("target_texts", target_texts),
+                ("metainfo", metainfo),
             ]:
                 self.stats[key] += val
                 batch_stats[key] = val

@@ -13,7 +13,7 @@ class Dataset:
     Seq2seq dataset for calculating quality of uncertainty estimation method.
     """
 
-    def __init__(self, x: List[str], h: List[str], y: List[str], batch_size: int):
+    def __init__(self, x: List[str], h: List[str], y: List[str], batch_size: int, metainfo: List | None = None):
         """
         Parameters:
             x (List[str]): a list of input texts.
@@ -24,10 +24,13 @@ class Dataset:
         self.x = x
         self.h = h
         self.y = y
+        self.metainfo = metainfo
         assert len(x) == len(y) == len(h)
+        if metainfo is not None:
+            assert len(metainfo) == len(x)
         self.batch_size = batch_size
 
-    def __iter__(self) -> Iterable[Tuple[List[str], List[str], List[str]]]:
+    def __iter__(self) -> Iterable[Tuple[List[str], List[str], List[str], List]]:
         """
         Returns:
             Iterable[Tuple[List[str], List[str]]]: iterates over batches in dataset,
@@ -38,6 +41,7 @@ class Dataset:
                 self.x[i : i + self.batch_size],
                 self.h[i : i + self.batch_size],
                 self.y[i : i + self.batch_size],
+                self.metainfo[i : i + self.batch_size] if self.metainfo is not None else None,
             )
 
     def __len__(self) -> int:
