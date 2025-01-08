@@ -98,9 +98,9 @@ class ClaimsExtractor(StatCalculator):
         for greedy_text, greedy_token, metainfo in zip(greedy_texts, greedy_tokens, metainfos):
             claims.append([])
             for span in metainfo:
-                begin, end, text = span['begin'], span['end'], span['text']
-                assert greedy_text[begin:end] == text
-                match_str = ' ' * begin + '^' * (end - begin) + ' ' * (len(greedy_text) - end)
+                start, end, text = span['start'], span['end'], span['text']
+                assert greedy_text[start:end] == text
+                match_str = ' ' * start + '^' * (end - start) + ' ' * (len(greedy_text) - end)
                 aligned_token_ids = self._align(greedy_text, match_str, greedy_tokens, model.tokenizer)
                 claim = Claim(
                     claim_text=span['text'],

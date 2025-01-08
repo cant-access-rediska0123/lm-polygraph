@@ -49,6 +49,9 @@ class Logger(Processor):
     Processor logging batch information to stdout.
     """
 
+    def __init__(self, print_fn=log.info):
+        self.print_fn = print_fn
+
     def on_batch(
         self,
         batch_stats: Dict[str, np.ndarray],
@@ -58,27 +61,27 @@ class Logger(Processor):
         """
         Outputs statistics from `batch_stats`, `batch_gen_metrics` and `batch_estimations` to stdout.
         """
-        log.info("=" * 50 + " NEW BATCH " + "=" * 50)
-        log.info("Statistics:")
-        log.info("")
+        self.print_fn("=" * 50 + " NEW BATCH " + "=" * 50)
+        self.print_fn("Statistics:")
+        self.print_fn("")
         for key, val in batch_stats.items():
             str_repr = str(val)
             # to skip large outputs
             if len(str_repr) < 10000 and str_repr.count("\n") < 10:
-                log.info(f"{key}: {val}")
-                log.info("")
-        log.info("-" * 100)
-        log.info("Estimations:")
-        log.info("")
+                self.print_fn(f"{key}: {val}")
+                self.print_fn("")
+        self.print_fn("-" * 100)
+        self.print_fn("Estimations:")
+        self.print_fn("")
         for key, val in batch_estimations.items():
-            log.info(f"{key}: {val}")
-            log.info("")
-        log.info("-" * 100)
-        log.info("Generation metrics:")
-        log.info("")
+            self.print_fn(f"{key}: {val}")
+            self.print_fn("")
+        self.print_fn("-" * 100)
+        self.print_fn("Generation metrics:")
+        self.print_fn("")
         for key, val in batch_gen_metrics.items():
-            log.info(f"{key}: {val}")
-            log.info("")
+            self.print_fn(f"{key}: {val}")
+            self.print_fn("")
 
     def on_eval(
         self,
@@ -88,13 +91,13 @@ class Logger(Processor):
         """
         Outputs statistics from `metrics` and failed estimators to stdout.
         """
-        log.info("=" * 50 + " METRICS " + "=" * 50)
-        log.info("Metrics:")
-        log.info("")
+        self.print_fn("=" * 50 + " METRICS " + "=" * 50)
+        self.print_fn("Metrics:")
+        self.print_fn("")
         for key, val in metrics.items():
-            log.info(f"{key}: {val}")
-            log.info("")
+            self.print_fn(f"{key}: {val}")
+            self.print_fn("")
         if len(bad_estimators) > 0:
-            log.info("=" * 45 + " FAILED ESTIMATORS " + "=" * 45)
+            self.print_fn("=" * 45 + " FAILED ESTIMATORS " + "=" * 45)
             for bad_estimator, batch_i in bad_estimators.items():
-                log.info(str(bad_estimator) + " on batch " + str(batch_i))
+                self.print_fn(str(bad_estimator) + " on batch " + str(batch_i))
