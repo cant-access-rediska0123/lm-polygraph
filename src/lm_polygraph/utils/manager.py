@@ -33,7 +33,7 @@ from lm_polygraph.utils.common import flatten_results
 
 import logging
 
-log = logging.getLogger("lm_polygraph")
+log = logging.getLogger()
 
 
 def _check_unique_names(xs):

@@ -143,6 +143,7 @@ class ClaimsExtractor(StatCalculator):
         else:
             claims = self._claims_from_metainfo(greedy_texts, greedy_tokens, metainfo, model)
 
+        claim_texts_concatenated, claim_input_texts_concatenated = [], []
         for c in claims:
             for claim in c:
                 claim_texts_concatenated.append(claim.claim_text)

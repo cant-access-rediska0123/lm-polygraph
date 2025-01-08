@@ -10,6 +10,9 @@ from lm_polygraph.utils.factory_stat_calculator import (
 def register_default_stat_calculators(
     model_type: str,
     language: str = "en",
+    deberta_model_path: str | None = None,
+    deberta_batch_size: int = 10,
+    deberta_device: str | None = None,
 ) -> List[StatCalculatorContainer]:
     """
     Specifies the list of the default stat_calculators that could be used in the evaluation scripts and
@@ -37,10 +40,11 @@ def register_default_stat_calculators(
         )
         all_stat_calculators.append(sc)
 
-    if language == "en":
-        deberta_model_path = "microsoft/deberta-large-mnli"
-    else:
-        deberta_model_path = "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
+    if deberta_model_path is None:
+        if language == "en":
+            deberta_model_path = "microsoft/deberta-large-mnli"
+        else:
+            deberta_model_path = "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7"
 
     _register(InitialStateCalculator)
     _register(
@@ -86,8 +90,8 @@ def register_default_stat_calculators(
             {
                 "nli_model": {
                     "deberta_path": deberta_model_path,
-                    "batch_size": 10,
-                    "device": None,
+                    "batch_size": deberta_batch_size,
+                    "device": deberta_device,
                 }
             },
         )
@@ -97,8 +101,8 @@ def register_default_stat_calculators(
             {
                 "nli_model": {
                     "deberta_path": deberta_model_path,
-                    "batch_size": 10,
-                    "device": None,
+                    "batch_size": deberta_batch_size,
+                    "device": deberta_device,
                 }
             },
         )

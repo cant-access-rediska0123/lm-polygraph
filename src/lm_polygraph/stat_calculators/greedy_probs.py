@@ -122,10 +122,7 @@ class GreedyProbsCalculator(StatCalculator):
         hyp_tokens = [
             model.tokenizer(h, add_special_tokens=False)["input_ids"] for h in hyp_texts
         ]
-        combined_tokens = [
-            it.tolist() + ht.tolist()
-            for it, ht in zip(input_tokens, hyp_tokens)
-        ]
+        combined_tokens = [it + ht for it, ht in zip(input_tokens, hyp_tokens)]
         combined_batch = model.tokenizer.pad(
             {"input_ids": combined_tokens},
             padding=True,
@@ -135,13 +132,7 @@ class GreedyProbsCalculator(StatCalculator):
 
 
         with torch.no_grad():
-            out = model(
-                **combined_batch,
-                output_scores=True,
-                return_dict_in_generate=True,
-                output_attentions=False,
-                output_hidden_states=True,
-            )
+            out = model(**combined_batch)
             logits = out.logits.log_softmax(-1)
 
         cut_logits = []
@@ -170,7 +161,7 @@ class GreedyProbsCalculator(StatCalculator):
                     best_tokens = [cur_token] + [t for t in best_tokens if t != cur_token]
 
                 for t in best_tokens:
-                    cut_alternatives[-1][j - begin_pos].append((t.item(), lt[t].item()))
+                    cut_alternatives[-1][j - begin_pos].append((t, lt[t].item()))
 
         ll = []
         for i in range(len(texts)):
