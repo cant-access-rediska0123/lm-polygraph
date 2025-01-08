@@ -144,11 +144,11 @@ class GreedyProbsCalculator(StatCalculator):
             end_pos = begin_pos + len(hyp_tokens[i])
             cut_sequences.append(hyp_tokens[i])
             cut_texts.append(hyp_texts[i])
-            cut_logits.append(logits[i][begin_pos:end_pos].cpu().numpy())
+            cut_logits.append(logits[i][begin_pos - 1:end_pos - 1].cpu().numpy())
             cut_alternatives.append([[] for _ in range(begin_pos, end_pos)])
 
             for j in range(begin_pos, end_pos):
-                lt = logits[i, j, :].cpu().numpy()
+                lt = logits[i, j - 1, :].cpu().numpy()
                 best_tokens = np.argpartition(lt, -self.n_alternatives)[-self.n_alternatives:]
                 best_tokens = best_tokens[np.argsort(-lt[best_tokens])].tolist()
 
