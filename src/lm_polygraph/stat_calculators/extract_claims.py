@@ -101,7 +101,7 @@ class ClaimsExtractor(StatCalculator):
                 start, end, text = span['start'], span['end'], span['text']
                 assert greedy_text[start:end] == text
                 match_str = ' ' * start + '^' * (end - start) + ' ' * (len(greedy_text) - end)
-                aligned_token_ids = self._align(greedy_text, match_str, greedy_tokens, model.tokenizer)
+                aligned_token_ids = self._align(greedy_text, match_str, greedy_token, model.tokenizer)
                 claim = Claim(
                     claim_text=span['text'],
                     sentence=None,
