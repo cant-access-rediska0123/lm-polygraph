@@ -25,11 +25,11 @@ class BlackboxGreedyTextsCalculator(StatCalculator):
         super().__init__()
 
     def __call__(
-        self,
-        dependencies: Dict[str, np.array],
-        texts: List[str],
-        model: BlackboxModel,
-        max_new_tokens: int = 100,
+            self,
+            dependencies: Dict[str, np.array],
+            texts: List[str],
+            model: BlackboxModel,
+            max_new_tokens: int = 100,
     ) -> Dict[str, np.ndarray]:
         """
         Calculates generation texts for Blackbox model on the input batch.
@@ -76,7 +76,6 @@ class GreedyProbsCalculator(StatCalculator):
             "greedy_tokens_alternatives",
             "greedy_texts",
             "greedy_log_likelihoods",
-            "embeddings",
         ], []
 
     def __init__(self, n_alternatives: int = 10):
@@ -84,11 +83,11 @@ class GreedyProbsCalculator(StatCalculator):
         self.n_alternatives = n_alternatives
 
     def __call__(
-        self,
-        dependencies: Dict[str, np.array],
-        texts: List[str],
-        model: WhiteboxModel,
-        max_new_tokens: int = 100,
+            self,
+            dependencies: Dict[str, np.array],
+            texts: List[str],
+            model: WhiteboxModel,
+            max_new_tokens: int = 100,
     ) -> Dict[str, np.ndarray]:
         """
         Calculates the statistics of probabilities at each token position in the generation.
@@ -108,66 +107,70 @@ class GreedyProbsCalculator(StatCalculator):
                 - 'attention' (List[List[np.array]]): attention maps at each token, if applicable to the model,
                 - 'greedy_log_likelihoods' (List[List[float]]): log-probabilities of the generated tokens.
         """
-        batch: Dict[str, torch.Tensor] = model.tokenize(texts)
-        batch = {k: v.to(model.device()) for k, v in batch.items()}
+
+        if 'hyp_texts' not in dependencies.keys():
+            raise Exception(
+                "No 'hyp_texts' found in depencendies. "
+                "Only proxy-model generations are supported in is LM-Polygraph version."
+            )
+        hyp_texts = dependencies['hyp_texts']
+        assert len(texts) == len(hyp_texts)
+
+        input_tokens = [model.tokenizer(t)["input_ids"] for t in texts]
+
+        # Tokenizer hyp_texts but make sure tokens begin with input_batch tokens
+        hyp_tokens = [
+            model.tokenizer(h, add_special_tokens=False)["input_ids"] for h in hyp_texts
+        ]
+        combined_tokens = [
+            it.tolist() + ht.tolist()
+            for it, ht in zip(input_tokens, hyp_tokens)
+        ]
+        combined_batch = model.tokenizer.pad(
+            {"input_ids": combined_tokens},
+            padding=True,
+            return_tensors="pt",
+        )
+        combined_batch = {k: v.to(model.device()) for k, v in combined_batch.items()}
+
+
         with torch.no_grad():
-            out = model.generate(
-                **batch,
+            out = model(
+                **combined_batch,
                 output_scores=True,
                 return_dict_in_generate=True,
-                max_new_tokens=max_new_tokens,
-                min_new_tokens=2,
                 output_attentions=False,
                 output_hidden_states=True,
-                num_return_sequences=1,
-                suppress_tokens=(
-                    []
-                    if model.generation_parameters.allow_newlines
-                    else [
-                        t
-                        for t in range(len(model.tokenizer))
-                        if "\n" in model.tokenizer.decode([t])
-                    ]
-                ),
             )
-            logits = torch.stack(out.scores, dim=1)
-
-            sequences = out.sequences
-            embeddings_encoder, embeddings_decoder = get_embeddings_from_output(
-                out, batch, model.model_type
-            )
+            logits = out.logits.log_softmax(-1)
 
         cut_logits = []
         cut_sequences = []
         cut_texts = []
         cut_alternatives = []
         for i in range(len(texts)):
-            if model.model_type == "CausalLM":
-                idx = batch["input_ids"].shape[1]
-                seq = sequences[i, idx:].cpu()
-            else:
-                seq = sequences[i, 1:].cpu()
-            length, text_length = len(seq), len(seq)
-            for j in range(len(seq)):
-                if seq[j] == model.tokenizer.eos_token_id:
-                    length = j + 1
-                    text_length = j
-                    break
-            cut_sequences.append(seq[:length].tolist())
-            cut_texts.append(model.tokenizer.decode(seq[:text_length]))
-            cut_logits.append(logits[i, :length, :].cpu().numpy())
-            cut_alternatives.append([[] for _ in range(length)])
-            for j in range(length):
+            begin_pos = len(input_tokens[i])
+            end_pos = begin_pos + len(hyp_tokens[i])
+            cut_sequences.append(hyp_tokens[i])
+            cut_texts.append(hyp_texts[i])
+            cut_logits.append(logits[i][begin_pos:end_pos].cpu().numpy())
+            cut_alternatives.append([[] for _ in range(begin_pos, end_pos)])
+
+            for j in range(begin_pos, end_pos):
                 lt = logits[i, j, :].cpu().numpy()
-                best_tokens = np.argpartition(lt, -self.n_alternatives)
-                ln = len(best_tokens)
-                best_tokens = best_tokens[ln - self.n_alternatives : ln]
+                best_tokens = np.argpartition(lt, -self.n_alternatives)[-self.n_alternatives:]
+                best_tokens = best_tokens[np.argsort(-lt[best_tokens])].tolist()
+
+                # as hyp_texts are not necessarily greedy, so
+                # need to make sure that first token is from hyp_texts
+                cur_token = hyp_tokens[i][j - begin_pos]
+                if cur_token not in best_tokens:
+                    best_tokens = [cur_token] + best_tokens[:-1]
+                else:
+                    best_tokens = [cur_token] + [t for t in best_tokens if t != cur_token]
+
                 for t in best_tokens:
-                    cut_alternatives[-1][j].append((t.item(), lt[t].item()))
-                cut_alternatives[-1][j].sort(
-                    key=lambda x: x[0] == cut_sequences[-1][j],
-                    reverse=True,
-                )
+                    cut_alternatives[-1][j - begin_pos].append((t.item(), lt[t].item()))
 
         ll = []
         for i in range(len(texts)):
@@ -176,26 +179,13 @@ class GreedyProbsCalculator(StatCalculator):
             assert len(tokens) == len(log_probs)
             ll.append([log_probs[j, tokens[j]] for j in range(len(log_probs))])
 
-        if model.model_type == "CausalLM":
-            embeddings_dict = {
-                "embeddings_decoder": embeddings_decoder.cpu().detach().numpy(),
-            }
-        elif model.model_type == "Seq2SeqLM":
-            embeddings_dict = {
-                "embeddings_encoder": embeddings_encoder.cpu().detach().numpy(),
-                "embeddings_decoder": embeddings_decoder.cpu().detach().numpy(),
-            }
-        else:
-            raise NotImplementedError
-
         result_dict = {
-            "input_tokens": batch["input_ids"].to("cpu").tolist(),
+            "input_tokens": input_tokens,
             "greedy_log_probs": cut_logits,
             "greedy_tokens": cut_sequences,
             "greedy_tokens_alternatives": cut_alternatives,
             "greedy_texts": cut_texts,
             "greedy_log_likelihoods": ll,
         }
-        result_dict.update(embeddings_dict)
 
         return result_dict
