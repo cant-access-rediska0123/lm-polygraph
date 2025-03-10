@@ -87,7 +87,7 @@ class ClaimsExtractor(StatCalculator):
             )
         return claims
 
-    def _claims_from_metainfo(
+    def _claims_from_metainfo_ragtruth(
             self,
             greedy_texts: List[str],
             greedy_tokens: List[List[int]],
@@ -109,6 +109,39 @@ class ClaimsExtractor(StatCalculator):
                     implicit_true=span['implicit_true'],
                 )
                 claims[-1].append(claim)
+        return claims
+
+    def _claims_from_metainfo_alexfactuality(
+            self,
+            greedy_texts: List[str],
+            greedy_tokens: List[List[int]],
+            metainfos: List[Dict],
+            model: WhiteboxModel,
+    ):
+
+        def parse_label(label):
+            _, factuality = eval(label)
+            if factuality.lower() == 'true':
+                return True
+            elif factuality.lower() == 'false':
+                return False
+            return None
+        claims = []
+        for greedy_text, greedy_token, metainfo in zip(greedy_texts, greedy_tokens, metainfos):
+            claims.append([
+                Claim(
+                    claim_text=claim_text,
+                    sentence=sent,
+                    aligned_token_ids=claim_ids,
+                    implicit_true=parse_label(label),
+                )
+                for claim_text, sent, claim_ids, label in zip(
+                    metainfo['claims'],
+                    metainfo['sents'],
+                    metainfo['claim_ids'],
+                    metainfo['auto_labels'],
+                )
+            ])
         return claims
 
     def __call__(
@@ -140,8 +173,10 @@ class ClaimsExtractor(StatCalculator):
         metainfo = dependencies["metainfo"]
         if metainfo is None:
             claims = self._openai_extraction(greedy_texts, greedy_tokens, model)
+        elif isinstance(metainfo[0], list):
+            claims = self._claims_from_metainfo_ragtruth(greedy_texts, greedy_tokens, metainfo, model)
         else:
-            claims = self._claims_from_metainfo(greedy_texts, greedy_tokens, metainfo, model)
+            claims = self._claims_from_metainfo_alexfactuality(greedy_texts, greedy_tokens, metainfo, model)
 
         claim_texts_concatenated, claim_input_texts_concatenated = [], []
         for c in claims:

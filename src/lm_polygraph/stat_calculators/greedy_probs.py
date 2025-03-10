@@ -119,9 +119,13 @@ class GreedyProbsCalculator(StatCalculator):
         input_tokens = [model.tokenizer(t)["input_ids"] for t in texts]
 
         # Tokenizer hyp_texts but make sure tokens begin with input_batch tokens
-        hyp_tokens = [
-            model.tokenizer(h, add_special_tokens=False)["input_ids"] for h in hyp_texts
-        ]
+        if isinstance(hyp_texts[0], str):
+            hyp_tokens = [
+                model.tokenizer(h, add_special_tokens=False)["input_ids"] for h in hyp_texts
+            ]
+        else:
+            hyp_tokens = hyp_texts
+            hyp_texts = [model.tokenizer.decode(t) for t in hyp_tokens]
         combined_tokens = [it + ht for it, ht in zip(input_tokens, hyp_tokens)]
         combined_batch = model.tokenizer.pad(
             {"input_ids": combined_tokens},
@@ -130,9 +134,8 @@ class GreedyProbsCalculator(StatCalculator):
         )
         combined_batch = {k: v.to(model.device()) for k, v in combined_batch.items()}
 
-
         with torch.no_grad():
-            out = model(**combined_batch)
+            out = model(**combined_batch, output_attentions=True)
             logits = out.logits.log_softmax(-1)
 
         cut_logits = []
@@ -177,6 +180,7 @@ class GreedyProbsCalculator(StatCalculator):
             "greedy_tokens_alternatives": cut_alternatives,
             "greedy_texts": cut_texts,
             "greedy_log_likelihoods": ll,
+            "attentions": out.attentions,
         }
 
         return result_dict
