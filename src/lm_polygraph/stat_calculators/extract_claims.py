@@ -120,7 +120,8 @@ class ClaimsExtractor(StatCalculator):
     ):
 
         def parse_label(label):
-            _, factuality = eval(label)
+            label = label.split('("')[-1].split('")')[0].replace(' ', '')
+            factuality = label.split('","', 1)[-1]
             if factuality.lower() == 'true':
                 return True
             elif factuality.lower() == 'false':
